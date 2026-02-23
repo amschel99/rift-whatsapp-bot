@@ -327,6 +327,17 @@ async function boot() {
     console.log('Visit /qr to scan the QR code when ready.\n');
   }
 
+  // Heartbeat: send test message every 1 minute
+  cron.schedule('* * * * *', async () => {
+    if (!waConnected) return;
+    try {
+      await sendMessage(ALERT_PHONE, `[Rift Heartbeat] ${new Date().toLocaleString('en-KE')} — alive`);
+      console.log(`[${new Date().toISOString()}] Heartbeat sent`);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] Heartbeat failed:`, err.message);
+    }
+  });
+
   // Health check cron
   cron.schedule('0 */6 * * *', () => {
     console.log(`[${new Date().toISOString()}] Health check — alive | WA: ${waConnected}`);
