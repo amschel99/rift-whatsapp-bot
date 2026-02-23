@@ -7,7 +7,7 @@ const path = require('path');
 const { fetchUsersWithDetails, closePool } = require('./db');
 const { categorizeAllUsers, printCategorySummary, CATEGORIES } = require('./categorize');
 const { generateMessage } = require('./messageGen');
-const { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp } = require('./whatsapp');
+const { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, getQR, isReady } = require('./whatsapp');
 const { appendLog } = require('./logger');
 
 // --- Config ---
@@ -31,6 +31,7 @@ let isRunning = false;
 let lastRun = null;
 let nextRunTime = null;
 let scheduledTimeout = null;
+let waConnected = false;
 let stats = { totalSent: 0, totalSkipped: 0, totalFailed: 0, batchesRun: 0 };
 
 // --- Sent tracker ---
@@ -73,6 +74,11 @@ async function runBatch() {
     return { skipped: true, reason: 'already_running' };
   }
 
+  if (!waConnected) {
+    console.log('WhatsApp not connected. Visit /qr to scan first.');
+    return { skipped: true, reason: 'whatsapp_not_connected' };
+  }
+
   isRunning = true;
   const startTime = new Date();
   console.log(`\n[${startTime.toISOString()}] Starting batch...`);
@@ -96,9 +102,6 @@ async function runBatch() {
     const { category, users } = pick;
     const batch = users.slice(0, DAILY_CAP);
     console.log(`Category: ${category} | ${batch.length}/${users.length} unsent`);
-
-    // Init WhatsApp
-    await initWhatsApp();
 
     // Alert admin
     await sendMessage(ALERT_PHONE,
@@ -147,8 +150,6 @@ async function runBatch() {
     await sendMessage(ALERT_PHONE, summary);
     console.log(summary.replace(/\n/g, ' | '));
 
-    await destroyWhatsApp();
-
     stats.totalSent += sentCount;
     stats.totalSkipped += skipCount;
     stats.totalFailed += failCount;
@@ -160,9 +161,7 @@ async function runBatch() {
     console.error('Batch error:', err);
     lastRun = { time: startTime, status: 'error', error: err.message };
     try {
-      await initWhatsApp();
       await sendMessage(ALERT_PHONE, `[Rift Auto] ERROR: ${err.message}`);
-      await destroyWhatsApp();
     } catch {}
     return lastRun;
   } finally {
@@ -173,7 +172,6 @@ async function runBatch() {
 // --- Scheduler ---
 
 function scheduleNextRun() {
-  // Random time between 9am-5pm EAT
   const hour = 9 + Math.floor(Math.random() * 8);
   const minute = Math.floor(Math.random() * 60);
 
@@ -200,11 +198,36 @@ function scheduleNextRun() {
 const app = express();
 app.use(express.json());
 
-// Health check / dashboard
+// QR code page — scan this from your phone browser
+app.get('/qr', (req, res) => {
+  const qr = getQR();
+  const ready = isReady();
+
+  if (ready) {
+    return res.send('<html><body style="font-family:monospace;text-align:center;padding:50px"><h1>WhatsApp Connected</h1><p>Already authenticated and ready.</p><a href="/">Dashboard</a></body></html>');
+  }
+
+  if (!qr) {
+    return res.send('<html><body style="font-family:monospace;text-align:center;padding:50px"><h1>Waiting for QR...</h1><p>WhatsApp is initializing. Refresh in a few seconds.</p><script>setTimeout(()=>location.reload(),3000)</script></body></html>');
+  }
+
+  // Render QR as a simple HTML page using a QR API
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+  res.send(`<html><body style="font-family:monospace;text-align:center;padding:30px">
+    <h1>Scan QR Code with WhatsApp</h1>
+    <p>Open WhatsApp > Linked Devices > Link a Device</p>
+    <img src="${qrImageUrl}" style="margin:20px"/>
+    <p>Waiting for scan...</p>
+    <script>setInterval(()=>{fetch('/').then(r=>r.json()).then(d=>{if(d.whatsapp==='connected')location.href='/'})},3000)</script>
+  </body></html>`);
+});
+
+// Health / dashboard
 app.get('/', (req, res) => {
   const sentTracker = loadSentTracker();
   res.json({
     status: 'running',
+    whatsapp: isReady() ? 'connected' : (getQR() ? 'waiting_for_scan' : 'initializing'),
     uptime: process.uptime(),
     isRunning,
     lastRun,
@@ -216,7 +239,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// View category breakdown
+// Category breakdown
 app.get('/categories', async (req, res) => {
   try {
     const rawUsers = await fetchUsersWithDetails();
@@ -236,14 +259,15 @@ app.get('/categories', async (req, res) => {
   }
 });
 
-// Trigger a batch manually
+// Trigger batch
 app.post('/run', async (req, res) => {
   if (isRunning) return res.status(409).json({ error: 'Batch already running' });
+  if (!waConnected) return res.status(400).json({ error: 'WhatsApp not connected. Visit /qr first.' });
   res.json({ message: 'Batch started' });
   runBatch().then(() => console.log('Manual batch complete'));
 });
 
-// Reset sent tracker (re-message everyone)
+// Reset tracker
 app.post('/reset', (req, res) => {
   saveSentTracker({});
   stats = { totalSent: 0, totalSkipped: 0, totalFailed: 0, batchesRun: 0 };
@@ -274,9 +298,10 @@ async function boot() {
     process.exit(1);
   }
 
-  // Start Express
+  // Start Express first so health checks pass
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`  GET  /qr          — scan WhatsApp QR code`);
     console.log(`  GET  /            — status dashboard`);
     console.log(`  GET  /categories  — category breakdown`);
     console.log(`  POST /run         — trigger batch now`);
@@ -284,12 +309,21 @@ async function boot() {
     console.log(`  GET  /logs        — view send logs\n`);
   });
 
-  // Schedule daily batches
-  scheduleNextRun();
+  // Connect WhatsApp in background
+  console.log('Connecting WhatsApp...');
+  try {
+    await initWhatsApp();
+    waConnected = true;
+    console.log('WhatsApp connected! Scheduling batches...\n');
+    scheduleNextRun();
+  } catch (err) {
+    console.error('WhatsApp init failed:', err.message);
+    console.log('Visit /qr to scan the QR code when ready.\n');
+  }
 
   // Health check cron
   cron.schedule('0 */6 * * *', () => {
-    console.log(`[${new Date().toISOString()}] Health check — alive`);
+    console.log(`[${new Date().toISOString()}] Health check — alive | WA: ${waConnected}`);
   });
 
   // Graceful shutdown

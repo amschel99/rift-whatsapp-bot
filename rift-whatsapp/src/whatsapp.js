@@ -2,32 +2,54 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 let waClient;
+let currentQR = null;
+let waReady = false;
 
 function initWhatsApp() {
   return new Promise((resolve, reject) => {
+    const authPath = process.env.WWEBJS_AUTH_PATH || './.wwebjs_auth';
+
     waClient = new Client({
-      authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+      authStrategy: new LocalAuth({ dataPath: authPath }),
       puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-zygote',
+          '--single-process',
+        ],
       },
     });
 
     waClient.on('qr', qr => {
-      console.log('\nScan this QR code with WhatsApp:\n');
+      currentQR = qr;
+      console.log('\nQR code received. Scan at /qr endpoint or terminal:\n');
       qrcode.generate(qr, { small: true });
     });
 
+    waClient.on('authenticated', () => {
+      currentQR = null;
+      console.log('WhatsApp authenticated.');
+    });
+
     waClient.on('ready', () => {
+      currentQR = null;
+      waReady = true;
       console.log('WhatsApp client ready.');
       resolve(waClient);
     });
 
     waClient.on('auth_failure', err => {
+      waReady = false;
       reject(new Error(`WhatsApp auth failed: ${err}`));
     });
 
     waClient.on('disconnected', reason => {
+      waReady = false;
       console.log('WhatsApp disconnected:', reason);
     });
 
@@ -35,24 +57,23 @@ function initWhatsApp() {
   });
 }
 
+function getQR() {
+  return currentQR;
+}
+
+function isReady() {
+  return waReady;
+}
+
 function formatKenyanNumber(phone) {
-  // Remove spaces, dashes, and plus signs
   let cleaned = phone.replace(/[\s\-\+]/g, '');
 
-  // Convert 07XX to 2547XX
   if (cleaned.startsWith('07') || cleaned.startsWith('01')) {
     cleaned = '254' + cleaned.slice(1);
   }
 
-  // Ensure it starts with 254
-  if (!cleaned.startsWith('254')) {
-    return null; // Invalid format
-  }
-
-  // Validate length (254 + 9 digits = 12)
-  if (cleaned.length !== 12 || !/^\d+$/.test(cleaned)) {
-    return null;
-  }
+  if (!cleaned.startsWith('254')) return null;
+  if (cleaned.length !== 12 || !/^\d+$/.test(cleaned)) return null;
 
   return cleaned;
 }
@@ -76,7 +97,6 @@ async function sendMessage(phone, message) {
     return { phone, status: 'skipped', error: 'Invalid phone number format', timestamp: new Date().toISOString() };
   }
 
-  // Check if number is on WhatsApp first
   const registered = await isOnWhatsApp(phone);
   if (!registered) {
     return { phone: formatted, status: 'skipped', error: 'Not registered on WhatsApp', timestamp: new Date().toISOString() };
@@ -98,7 +118,7 @@ function randomDelay(min = 8000, max = 15000) {
 }
 
 function sessionBreak() {
-  const mins = 2 + Math.random() * 3; // 2-5 minutes
+  const mins = 2 + Math.random() * 3;
   const ms = mins * 60 * 1000;
   console.log(`\n  --- Session break: ${mins.toFixed(1)} minutes ---\n`);
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -108,6 +128,7 @@ async function destroyWhatsApp() {
   if (waClient) {
     await waClient.destroy();
     waClient = null;
+    waReady = false;
   }
 }
 
@@ -115,4 +136,4 @@ function getClient() {
   return waClient;
 }
 
-module.exports = { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, formatKenyanNumber, getClient };
+module.exports = { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, formatKenyanNumber, getClient, getQR, isReady };
