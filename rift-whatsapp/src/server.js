@@ -200,6 +200,8 @@ app.use(express.json());
 
 // QR code page — scan this from your phone browser
 app.get('/qr', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
   const qr = getQR();
   const ready = isReady();
 
