@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "manual": "node src/index.js",
-    "dry-run": "node src/index.js --dry-run"
+    "dry-run": "node src/index.js --dry-run",
+    "postinstall": "npx puppeteer browsers install chrome"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
