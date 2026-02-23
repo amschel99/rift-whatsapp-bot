@@ -1,0 +1,939 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/main-client"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OfframpOrder {
+  id               String   @unique @default(uuid())
+  amount           String
+  status           String
+  transactionCode  String
+  createdAt        DateTime @default(now()) @map("created_at")
+  userId           String   @map("user_id")
+  receipt_number   String?
+  transaction_hash String?
+  currency         String   @default("KES")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OnrampOrder {
+  id               String   @unique @default(uuid())
+  receipt_number   String?
+  transactionCode  String   @unique
+  status           String
+  createdAt        DateTime @default(now()) @map("created_at")
+  userId           String   @map("user_id")
+  transaction_hash String?
+  amount           String?
+  currency         String   @default("KES")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BaseUsdcDeposit {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  transactionHash String   @unique @map("transaction_hash")
+  blockNumber     BigInt   @map("block_number")
+  blockTimestamp  BigInt   @map("block_timestamp")
+  fromAddress     String   @map("from_address")
+  toAddress       String   @map("to_address")
+  amount          String
+  rawAmount       String   @map("raw_amount")
+  exchangeRate    Float?   @map("exchange_rate")
+  kesAmount       Float?   @map("kes_amount")
+  processed       Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([blockNumber])
+  @@index([blockTimestamp])
+  @@index([toAddress])
+  @@index([processed])
+  @@map("base_usdc_deposits")
+}
+
+model User {
+  id                        String                     @id @default(uuid())
+  email                     String?                    @map("email")
+  phoneNumber               String?                    @map("phone_number")
+  externalId                String?                    @map("external_id")
+  createdAt                 DateTime                   @default(now()) @map("created_at")
+  updatedAt                 DateTime                   @updatedAt @map("updated_at")
+  referrer                  String?                    @map("referrer")
+  referralCode              String?                    @unique @map("referral_code")
+  telegramId                String?                    @map("telegram_id")
+  password                  String?                    @map("password")
+  display_name              String?
+  payment_account           String?
+  notificationEmail         String?
+  instantWithdrawals        Boolean?                   @default(false)
+  merchantApproved          Boolean?                   @default(true) @map("merchant_approved")
+  merchantApprovedAt        DateTime?                  @map("merchant_approved_at")
+  merchantApprovedBy        String?                    @map("merchant_approved_by")
+  merchantKybNotes          String?                    @map("merchant_kyb_notes")
+  isSuspended               Boolean                    @default(false) @map("is_suspended")
+  suspendedAt               DateTime?                  @map("suspended_at")
+  suspendedReason           String?                    @map("suspended_reason")
+  suspendedBy               String?                    @map("suspended_by")
+  projectId                 String                     @map("project_id")
+  country                   String?                    @map("country")
+  kycVerified               Boolean                    @default(false) @map("kyc_verified")
+  kycVerifiedAt             DateTime?                  @map("kyc_verified_at")
+  kycJobId                  String?                    @map("kyc_job_id")
+  kycIdNumberHash           String?                    @unique @map("kyc_id_number_hash") // SHA-256 hash of ID number to prevent duplicate use
+  offrampOrders             OfframpOrder[]
+  onrampOrders              OnrampOrder[]
+  authorizations            Authorization[]
+  baseUsdcDeposits          BaseUsdcDeposit[]
+  encryptedKeys             EncryptedKeys[]
+  invoices                  Invoice[]
+  loyaltyAccount            LoyaltyAccount?
+  notificationSubscriptions NotificationSubscription[]
+  createdPaymentLinks       PaymentLink[]              @relation("CreatedPaymentLinks")
+  paidPaymentLinks          PaymentLink[]              @relation("PaidPaymentLinks")
+  recovery                  Recovery?
+  recoveryTokens            RecoveryToken[]
+  smart_wallets             smart_wallets[]
+  sphereAccounts            SphereAccount[]
+  transactions              Transaction[]
+  devices                   UserDevice[]
+  vaultActivities           VaultActivity[]
+  weeklyPoolEntries         WeeklyPoolEntry[]
+  weeklyPoolWins            WeeklyPoolWinner[]
+  referralFeesReceived      ReferralFeeEntry[]         @relation("ReferralFeesReceived")
+  referralFeesGenerated     ReferralFeeEntry[]         @relation("ReferralFeesGenerated")
+  referralFeeClaims         ReferralFeeClaim[]         @relation("ReferralFeeClaims")
+  project                   Project                    @relation("ProjectUsers", fields: [projectId], references: [id])
+
+  @@unique([externalId, projectId])
+  @@index([projectId])
+  @@index([id, projectId])
+  @@map("users")
+}
+
+model InvoiceUrl {
+  id  String @unique
+  url String
+}
+
+model NotificationSubscription {
+  id                       String                 @id @default(uuid())
+  userId                   String                 @map("user_id")
+  notificationManagementId String                 @map("notification_management_id")
+  subscriberId             String                 @map("subscriber_id")
+  deviceInfo               String?                @map("device_info")
+  platform                 String?                @map("platform")
+  isActive                 Boolean                @default(true) @map("is_active")
+  createdAt                DateTime               @default(now()) @map("created_at")
+  updatedAt                DateTime               @updatedAt @map("updated_at")
+  notificationManagement   NotificationManagement @relation(fields: [notificationManagementId], references: [id], onDelete: Cascade)
+  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriberId, notificationManagementId])
+  @@index([userId])
+  @@index([subscriberId])
+  @@index([notificationManagementId])
+  @@map("notification_subscriptions")
+}
+
+model Recovery {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  email       String?  @map("recovery_email")
+  phoneNumber String?  @map("recovery_phone")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("recovery")
+}
+
+model RecoveryToken {
+  id        String            @id @default(uuid())
+  userId    String            @map("user_id")
+  token     String            @unique
+  type      RecoveryTokenType
+  expiresAt DateTime          @map("expires_at")
+  used      Boolean           @default(false)
+  createdAt DateTime          @default(now()) @map("created_at")
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("recovery_tokens")
+}
+
+model EncryptedKeys {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  encryptedKeys String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  type          String   @default("ETH")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("encrypted_keys")
+}
+
+model BurnStats {
+  id            String   @id @default(uuid())
+  sphere_burnt  String?
+  usdc_rewarded String?
+  burn_hash     String?
+  rewards_hash  String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("burn_stats")
+}
+
+model OrderStatus {
+  id     String @unique
+  status String
+}
+
+model Transaction {
+  id           String     @id @default(uuid())
+  userId       String     @map("user_id")
+  deviceId     String     @map("device_id")
+  amount       Float
+  recipient    String?
+  currency     String     @default("ETH")
+  type         String
+  status       String     @default("PENDING")
+  statusReason String?    @map("status_reason")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  device       UserDevice @relation(fields: [deviceId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Error {
+  id        String   @id @default(uuid())
+  details   String
+  createdAt DateTime @default(now()) @map("created_at")
+}
+
+model RequestLinkRedirect {
+  url             String
+  telegram_url    String?
+  mobile_url      String?
+  project_api_key String   @unique
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+}
+
+model SendLinkRedirect {
+  url             String
+  telegram_url    String?
+  mobile_url      String?
+  project_api_key String   @unique
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+}
+
+model PaymentLink {
+  id              String            @id @default(uuid())
+  nonce           String            @unique
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  createdByUserId String?           @map("created_by_user_id")
+  amount          Float?            @map("amount")
+  token           String?           @map("token")
+  chain           String?           @map("chain")
+  creatorAddress  String?           @map("creator_address")
+  paidByAddress   String?           @map("paid_by_address")
+  paidAt          DateTime?         @map("paid_at")
+  paidByUserId    String?           @map("paid_by_user_id")
+  status          PaymentLinkStatus @default(PENDING) @map("status")
+  createdByUser   User?             @relation("CreatedPaymentLinks", fields: [createdByUserId], references: [id])
+  paidByUser      User?             @relation("PaidPaymentLinks", fields: [paidByUserId], references: [id])
+
+  @@index([createdByUserId])
+  @@index([paidByUserId])
+  @@map("payment_links")
+}
+
+model SphereAccount {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  sphereId    Json         @map("sphere_id")
+  accessToken String?      @map("access_token")
+  isDefault   Boolean      @default(false) @map("is_default")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devices     UserDevice[]
+
+  @@index([userId])
+  @@index([accessToken])
+  @@map("sphere_accounts")
+}
+
+model UserDevice {
+  id                   String         @id @default(uuid())
+  userId               String         @map("user_id")
+  sphereAccountId      String?        @map("sphere_account_id")
+  deviceToken          String         @unique @map("device_token")
+  deviceName           String?        @map("device_name")
+  isPrimary            Boolean        @default(false) @map("is_primary")
+  verified             Boolean        @default(false)
+  dailyWithdrawalLimit Float          @default(100) @map("daily_withdrawal_limit")
+  lastUsed             DateTime       @default(now()) @map("last_used")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+  transactions         Transaction[]
+  sphereAccount        SphereAccount? @relation(fields: [sphereAccountId], references: [id])
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sphereAccountId])
+  @@map("user_devices")
+}
+
+model Balance {
+  id        String   @id @default(uuid())
+  apiKey    String   @map("api_key")
+  hkd       Float?   @map("HKD")
+  usd       Float?   @map("USD")
+  username  String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("balances")
+}
+
+model Campaign {
+  id             String   @id @default(uuid())
+  campaignName   String   @map("campaign_name")
+  campaignCode   String?  @map("campaign_code")
+  amountPerUser  Float?   @map("amount_per_user")
+  maxTokens      Float?   @map("max_tokens")
+  collectedUsers String[]
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("campaigns")
+}
+
+model Unlock {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  amount    Float    @default(0)
+  unlocked  Float    @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("unlocks")
+}
+
+model CronJob {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  time      String
+  type      String
+  args      String?
+  runAt     DateTime?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("cron_jobs")
+}
+
+model UnlockHistory {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  messages  String[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("unlock_histories")
+}
+
+model Conversation {
+  id             String    @id @default(uuid())
+  username       String
+  conversationId String    @unique @map("conversation_id")
+  nonce          String
+  secret         String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  history        History[]
+
+  @@map("conversations")
+}
+
+model History {
+  id             String       @id @default(uuid())
+  prompt         String
+  response       String
+  conversationId String       @map("conversation_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@map("histories")
+}
+
+model Referral {
+  id        String    @id @default(uuid())
+  code      String?
+  address   String?
+  referrer  String    @unique
+  referred  String?
+  valid     Boolean   @default(true)
+  amount    Float?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  usedAt    DateTime? @map("used_at")
+
+  @@map("referrals")
+}
+
+model Test {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("tests")
+}
+
+model Checkin {
+  id          String   @id @default(uuid())
+  user        String
+  lastCheckin DateTime @default(now()) @map("last_checkin")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("checkins")
+}
+
+model Project {
+  id                     String                  @id @default(uuid())
+  owner_phone            String?
+  owner_email            String?
+  payment_link_widget    String?
+  name                   String
+  api_key                String                  @unique
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+  known_origins          String[]                @map("known_origins")
+  api_calls              Int                     @default(0) @map("api_calls")
+  successful_api_calls   Int                     @default(0) @map("successful_api_calls")
+  failed_api_calls       Int                     @default(0) @map("failed_api_calls")
+  notificationManagement NotificationManagement?
+  users                  User[]                  @relation("ProjectUsers")
+  ScheduledNotification  ScheduledNotification[]
+
+  @@index([owner_phone])
+  @@index([owner_email])
+  @@map("projects")
+}
+
+model SmartWallet {
+  address    String   @unique
+  created_at DateTime @default(now()) @map("created_at")
+  user_id    String   @default("unknown")
+
+  @@index([user_id])
+  @@map("SmartWallet")
+}
+
+model GraphIndexerState {
+  id                       String   @id @default(uuid())
+  chain                    String   @unique
+  last_processed_timestamp BigInt   @default(0) @map("last_processed_timestamp")
+  created_at               DateTime @default(now()) @map("created_at")
+  updated_at               DateTime @updatedAt @map("updated_at")
+
+  @@map("GraphIndexerState")
+}
+
+model NotificationManagement {
+  id                   String                     @id @default(uuid())
+  projectId            String                     @unique @map("project_id")
+  webpushrKey          String?                    @map("webpushr_key")
+  webpushrAuthToken    String?                    @map("webpushr_auth_token")
+  firebaseConfig       String?                    @map("firebase_config")
+  pusherInstanceId     String?                    @map("pusher_instance_id")
+  pusherSecretKey      String?                    @map("pusher_secret_key")
+  notificationProvider NotificationProvider       @default(WEBPUSHR)
+  androidConfig        Json?                      @map("android_config")
+  apnsConfig           Json?                      @map("apns_config")
+  enabled              Boolean                    @default(false)
+  targetUrls           Json?                      @map("target_urls")
+  webhookUrl           String?                    @map("webhook_url")
+  webhookSecret        String?                    @map("webhook_secret")
+  totalSent            Int                        @default(0) @map("total_sent")
+  totalFailed          Int                        @default(0) @map("total_failed")
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+  project              Project                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subscriptions        NotificationSubscription[]
+
+  @@index([projectId])
+  @@map("notification_management")
+}
+
+model ScheduledNotification {
+  id        String    @id @default(uuid())
+  projectId String    @map("project_id")
+  name      String
+  message   String
+  title     String?
+  targetUrl String?   @map("target_url")
+  schedule  String
+  enabled   Boolean   @default(true)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  lastRunAt DateTime? @map("last_run_at")
+  nextRunAt DateTime? @map("next_run_at")
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([enabled])
+  @@index([nextRunAt])
+  @@map("scheduled_notifications")
+}
+
+model Authorization {
+  id        String   @id @default(uuid())
+  chain     String?
+  urlId     String   @unique @map("url_id")
+  token     String
+  value     String
+  ownerId   String
+  receiver  String?
+  expiresAt DateTime
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([urlId])
+  @@index([ownerId])
+  @@map("authorizations")
+}
+
+model TxnDetail {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  details    String
+  transacted Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("txn_details")
+}
+
+model TransactionHistory {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  transactionHash  String   @map("transaction_hash")
+  chain            String   @default("ETHEREUM")
+  token            String   @default("ETH")
+  currency         String?
+  amount           Float
+  recipientAddress String   @map("recipient_address")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([transactionHash])
+  @@map("transaction_history")
+}
+
+model CredentialsConsensus {
+  id         String    @id @default(uuid())
+  identifier String    @unique
+  consensus  Boolean[]
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([createdAt])
+  @@map("credentials_consensus")
+}
+
+model Credentials {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  hashedPassword String   @map("hashed_password")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("credentials")
+}
+
+model Shard {
+  id        String   @id @default(uuid())
+  shardId   String   @unique @map("shard_id")
+  shardData String   @map("shard_data")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("shards")
+}
+
+model UserReward {
+  id        String   @id @default(uuid())
+  email     String
+  action    String
+  tokens    Float
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@index([action])
+  @@map("user_rewards")
+}
+
+model StatsSnapshot {
+  id        String   @id @default(uuid())
+  stats     Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("stats_snapshots")
+}
+
+model Chain {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  displayName         String   @map("display_name")
+  chainId             Int      @unique @map("chain_id")
+  rpcUrl              String   @map("rpc_url")
+  blockExplorerUrl    String?  @map("block_explorer_url")
+  description         String?
+  icon                String?
+  isTestnet           Boolean  @default(false) @map("is_testnet")
+  isActive            Boolean  @default(true) @map("is_active")
+  nativeTokenSymbol   String   @map("native_token_symbol")
+  nativeTokenDecimals Int      @map("native_token_decimals")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  tokens              Token[]
+
+  @@index([chainId])
+  @@index([isActive])
+  @@map("chains")
+}
+
+model Token {
+  id        String    @id @default(uuid())
+  chainId   String    @map("chain_id")
+  symbol    String
+  address   String
+  decimals  Int
+  type      TokenType
+  category  String?
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  chain     Chain     @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  @@unique([chainId, symbol])
+  @@unique([chainId, address])
+  @@index([chainId])
+  @@index([isActive])
+  @@map("tokens")
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  description    String
+  chain          String
+  token          String
+  amount         Float
+  recipientEmail String?
+  recipientPhone String?
+  status         InvoiceStatus @default(PENDING)
+  url            String
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  paidAt         DateTime?
+  expiresAt      DateTime?
+  userId         String        @map("user_id")
+  user           User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("invoices")
+}
+
+model LoyaltyAccount {
+  id               String              @id @default(uuid())
+  userId           String              @unique @map("user_id")
+  totalPoints      Float               @default(0) @map("total_points")
+  availablePoints  Float               @default(0) @map("available_points")
+  totalVolume      Float               @default(0) @map("total_volume")
+  lastActivityDate DateTime?           @map("last_activity_date")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at")
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities       LoyaltyActivity[]
+  redemptions      LoyaltyRedemption[]
+
+  @@index([userId])
+  @@index([totalPoints])
+  @@index([totalVolume])
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyActivity {
+  id               String         @id @default(uuid())
+  accountId        String         @map("account_id")
+  actionType       String         @map("action_type")
+  transactionValue Float          @map("transaction_value")
+  pointsEarned     Float          @map("points_earned")
+  pointValue       Float          @map("point_value")
+  multiplier       Float          @default(1.0)
+  metadata         Json?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  account          LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([actionType])
+  @@index([createdAt])
+  @@map("loyalty_activities")
+}
+
+model LoyaltyRedemption {
+  id             String         @id @default(uuid())
+  accountId      String         @map("account_id")
+  pointsRedeemed Float          @map("points_redeemed")
+  pointValue     Float          @map("point_value")
+  usdValue       Float          @map("usd_value")
+  redemptionType String         @map("redemption_type")
+  status         String         @default("PENDING")
+  transaction_id String?
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  completedAt    DateTime?      @map("completed_at")
+  account        LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([status])
+  @@map("loyalty_redemptions")
+}
+
+model smart_wallets {
+  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  address    String   @unique
+  user_id    String
+  chain_id   Int
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now())
+  users      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([address])
+  @@index([chain_id])
+  @@index([user_id])
+}
+
+model KYCSession {
+  id              String    @id @default(uuid())
+  identifier      String    @map("identifier")
+  userId          String?   @map("user_id")
+  jobId           String    @unique @map("job_id")
+  smileJobId      String?   @map("smile_job_id")
+  country         String
+  status          String    @default("pending")
+  resultCode      String?   @map("result_code")
+  resultText      String?   @map("result_text")
+  confidenceValue String?   @map("confidence_value")
+  idType          String?   @map("id_type")
+  idNumber        String?   @map("id_number")
+  fullName        String?   @map("full_name")
+  dateOfBirth     String?   @map("date_of_birth")
+  actions         Json?
+  rawResult       Json?     @map("raw_result")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+  expiresAt       DateTime  @map("expires_at")
+
+  @@index([identifier])
+  @@index([userId])
+  @@index([jobId])
+  @@index([status])
+  @@map("kyc_sessions")
+}
+
+model VaultActivity {
+  id              String            @id @default(uuid())
+  userId          String            @map("user_id")
+  type            VaultActivityType
+  amount          String            // Store as string to preserve precision
+  transactionHash String?           @map("transaction_hash")
+  status          String            @default("PENDING") // PENDING, COMPLETED, FAILED, CANCELLED
+  walletAddress   String?           @map("wallet_address")
+  metadata        Json?             // Additional data like rewards amount, etc.
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  completedAt     DateTime?         @map("completed_at")
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@index([transactionHash])
+  @@map("vault_activities")
+}
+
+model WeeklyPool {
+  id                    String              @id @default(uuid())
+  weekStart             DateTime            @map("week_start")
+  weekEnd               DateTime            @map("week_end")
+  status                WeeklyPoolStatus    @default(ACTIVE)
+  prizeAmount           Float               @default(10.0) @map("prize_amount")
+  winnerId              String?             @map("winner_id")
+  winnerPayoutTx        String?             @map("winner_payout_tx")
+  totalParticipants     Int                 @default(0) @map("total_participants")
+  qualifiedParticipants Int                 @default(0) @map("qualified_participants")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  entries               WeeklyPoolEntry[]
+  winners               WeeklyPoolWinner[]
+
+  @@index([status])
+  @@index([weekStart])
+  @@map("weekly_pools")
+}
+
+model WeeklyPoolEntry {
+  id                String       @id @default(uuid())
+  poolId            String       @map("pool_id")
+  userId            String       @map("user_id")
+  transactionVolume Float        @default(0) @map("transaction_volume")
+  referralCount     Int          @default(0) @map("referral_count")
+  multiplier        Float        @default(1.0)
+  effectiveVolume   Float        @default(0) @map("effective_volume")
+  isQualified       Boolean      @default(false) @map("is_qualified")
+  rank              Int?
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  pool              WeeklyPool   @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, userId])
+  @@index([poolId])
+  @@index([userId])
+  @@index([isQualified])
+  @@index([effectiveVolume])
+  @@map("weekly_pool_entries")
+}
+
+model WeeklyPoolWinner {
+  id          String     @id @default(uuid())
+  poolId      String     @map("pool_id")
+  userId      String     @map("user_id")
+  displayName String     @map("display_name")
+  weekLabel   String     @map("week_label")
+  prizeAmount Float      @map("prize_amount")
+  paidAt      DateTime?  @map("paid_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  pool        WeeklyPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([poolId])
+  @@index([userId])
+  @@map("weekly_pool_winners")
+}
+
+enum WeeklyPoolStatus {
+  ACTIVE
+  DRAWING
+  COMPLETED
+}
+
+model ReferralFeeEntry {
+  id               String   @id @default(uuid())
+  referrerUserId   String   @map("referrer_user_id")
+  transactorUserId String   @map("transactor_user_id")
+  orderId          String   @map("order_id")
+  amountLocal      Float    @map("amount_local")
+  currency         String   @default("KES")
+  createdAt        DateTime @default(now()) @map("created_at")
+  referrerUser     User     @relation("ReferralFeesReceived", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  transactorUser   User     @relation("ReferralFeesGenerated", fields: [transactorUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerUserId])
+  @@index([transactorUserId])
+  @@map("referral_fee_entries")
+}
+
+model ReferralFeeClaim {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  amountKes       Float     @map("amount_kes")
+  amountUsd       Float     @map("amount_usd")
+  exchangeRate    Float     @map("exchange_rate")
+  transactionHash String?   @map("transaction_hash")
+  status          String    @default("PENDING")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+  user            User      @relation("ReferralFeeClaims", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("referral_fee_claims")
+}
+
+enum VaultActivityType {
+  DEPOSIT
+  WITHDRAWAL
+  WITHDRAWAL_REQUEST
+  WITHDRAWAL_CANCEL
+  CLAIM_REQUEST
+  CLAIM_CANCEL
+  CLAIM_COMPLETED
+}
+
+enum NotificationProvider {
+  WEBPUSHR
+  FIREBASE
+  PUSHER_BEAMS
+}
+
+enum PaymentLinkStatus {
+  PENDING
+  PAID
+}
+
+enum Platform {
+  SERVER
+  MOBILE
+  WEB
+  TELEGRAM
+}
+
+enum TokenType {
+  STABLE
+  ERC20
+  NATIVE
+}
+
+enum InvoiceStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
+enum RecoveryTokenType {
+  PASSWORD_RESET
+  ACCOUNT_RECOVERY
+}

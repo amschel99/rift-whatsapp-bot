@@ -1,0 +1,21 @@
+{
+  "name": "rift-whatsapp-reactivation",
+  "version": "1.0.0",
+  "description": "WhatsApp reactivation system for Rift users",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "manual": "node src/index.js",
+    "dry-run": "node src/index.js --dry-run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1",
+    "pg": "^8.13.1",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.1",
+    "yargs": "^17.7.2"
+  }
+}
