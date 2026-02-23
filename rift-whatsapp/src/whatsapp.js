@@ -1,10 +1,14 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const path = require('path');
+const puppeteer = require('puppeteer');
 
-// Ensure Puppeteer finds Chrome installed during build
-if (!process.env.PUPPETEER_CACHE_DIR) {
-  process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '..', 'node_modules', '.puppeteer-cache');
+// Resolve Chrome path from puppeteer's own install
+let chromePath;
+try {
+  chromePath = process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath();
+  console.log('Chrome found at:', chromePath);
+} catch (err) {
+  console.error('Could not find Chrome:', err.message);
 }
 
 let waClient;
@@ -25,7 +29,7 @@ function initWhatsApp() {
       authStrategy: new LocalAuth({ dataPath: authPath }),
       puppeteer: {
         headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        executablePath: chromePath,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
