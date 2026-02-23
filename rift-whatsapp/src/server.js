@@ -7,7 +7,7 @@ const path = require('path');
 const { fetchUsersWithDetails, closePool } = require('./db');
 const { categorizeAllUsers, printCategorySummary, CATEGORIES } = require('./categorize');
 const { generateMessage } = require('./messageGen');
-const { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, getQR, isReady } = require('./whatsapp');
+const { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, getQR, isReady, getInitStatus } = require('./whatsapp');
 const { appendLog } = require('./logger');
 
 // --- Config ---
@@ -210,7 +210,11 @@ app.get('/qr', (req, res) => {
   }
 
   if (!qr) {
-    return res.send('<html><body style="font-family:monospace;text-align:center;padding:50px"><h1>Waiting for QR...</h1><p>WhatsApp is initializing. Refresh in a few seconds.</p><script>setTimeout(()=>location.reload(),3000)</script></body></html>');
+    const { status, error } = getInitStatus();
+    const statusMsg = error
+      ? `<p style="color:red"><b>Error:</b> ${error}</p><p>Status: ${status}</p>`
+      : `<p>Status: <b>${status}</b></p>`;
+    return res.send(`<html><body style="font-family:monospace;text-align:center;padding:50px"><h1>Waiting for QR...</h1>${statusMsg}<p>WhatsApp is initializing. This page auto-refreshes.</p><script>setTimeout(()=>location.reload(),3000)</script></body></html>`);
   }
 
   // Render QR as a simple HTML page using a QR API

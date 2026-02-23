@@ -4,10 +4,16 @@ const qrcode = require('qrcode-terminal');
 let waClient;
 let currentQR = null;
 let waReady = false;
+let initStatus = 'not_started';
+let initError = null;
 
 function initWhatsApp() {
   return new Promise((resolve, reject) => {
     const authPath = process.env.WWEBJS_AUTH_PATH || './.wwebjs_auth';
+
+    initStatus = 'creating_client';
+    initError = null;
+    console.log('WhatsApp: creating client...');
 
     waClient = new Client({
       authStrategy: new LocalAuth({ dataPath: authPath }),
@@ -21,40 +27,71 @@ function initWhatsApp() {
           '--disable-gpu',
           '--no-zygote',
           '--single-process',
+          '--disable-software-rasterizer',
         ],
       },
     });
 
+    // Timeout: if no QR or ready within 2 minutes, something is wrong
+    const initTimeout = setTimeout(() => {
+      if (!waReady && !currentQR) {
+        initStatus = 'timeout';
+        initError = 'Chromium failed to start within 2 minutes. Check memory/logs on Render.';
+        console.error('WhatsApp: init timeout — Chromium likely failed to start');
+      }
+    }, 120000);
+
     waClient.on('qr', qr => {
+      clearTimeout(initTimeout);
       currentQR = qr;
+      initStatus = 'waiting_for_scan';
       console.log('\nQR code received. Scan at /qr endpoint or terminal:\n');
       qrcode.generate(qr, { small: true });
     });
 
     waClient.on('authenticated', () => {
       currentQR = null;
+      initStatus = 'authenticated';
       console.log('WhatsApp authenticated.');
     });
 
     waClient.on('ready', () => {
+      clearTimeout(initTimeout);
       currentQR = null;
       waReady = true;
+      initStatus = 'ready';
       console.log('WhatsApp client ready.');
       resolve(waClient);
     });
 
     waClient.on('auth_failure', err => {
+      clearTimeout(initTimeout);
       waReady = false;
+      initStatus = 'auth_failed';
+      initError = String(err);
       reject(new Error(`WhatsApp auth failed: ${err}`));
     });
 
     waClient.on('disconnected', reason => {
       waReady = false;
+      initStatus = 'disconnected';
       console.log('WhatsApp disconnected:', reason);
     });
 
-    waClient.initialize().catch(reject);
+    initStatus = 'initializing';
+    console.log('WhatsApp: calling initialize() — launching Chromium...');
+    waClient.initialize().catch(err => {
+      clearTimeout(initTimeout);
+      initStatus = 'init_error';
+      initError = err.message;
+      console.error('WhatsApp: initialize() failed:', err.message);
+      reject(err);
+    });
   });
+}
+
+function getInitStatus() {
+  return { status: initStatus, error: initError };
 }
 
 function getQR() {
@@ -136,4 +173,4 @@ function getClient() {
   return waClient;
 }
 
-module.exports = { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, formatKenyanNumber, getClient, getQR, isReady };
+module.exports = { initWhatsApp, sendMessage, randomDelay, sessionBreak, destroyWhatsApp, formatKenyanNumber, getClient, getQR, isReady, getInitStatus };
