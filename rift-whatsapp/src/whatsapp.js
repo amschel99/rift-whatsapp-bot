@@ -1,5 +1,11 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const path = require('path');
+
+// Ensure Puppeteer finds Chrome installed during build
+if (!process.env.PUPPETEER_CACHE_DIR) {
+  process.env.PUPPETEER_CACHE_DIR = path.join(__dirname, '..', 'node_modules', '.puppeteer-cache');
+}
 
 let waClient;
 let currentQR = null;
